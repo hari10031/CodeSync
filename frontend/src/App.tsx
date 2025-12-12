@@ -26,6 +26,9 @@ import ResumeBuilderPage from "./pages/ResumeBuilderPage";
 import ATSAnalyzerPage from "./pages/ATSAnalyzerPage";
 import JobSuggestionsPage from "./pages/JobSuggestionsPage";
 
+// CS.ai PAGE
+import CSAiPage from "./pages/CSAiPage";
+
 // INSTRUCTOR PAGES
 import InstructorDashboard from "./pages/instructor/InstructorDashboard";
 
@@ -72,7 +75,7 @@ export default function App() {
                 requireOnboarding={false}
                 authVersion={authVersion}
               >
-                
+
                 <OnboardingPage />
               </ProtectedRoute>
             }
@@ -138,6 +141,16 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+          
+          <Route
+            path="/ai-assistance"
+            element={
+              <ProtectedRoute allowedRoles={["student"]}>
+                <CSAiPage />
+              </ProtectedRoute>
+            }
+          />
+
 
           <Route
             path="/profile"

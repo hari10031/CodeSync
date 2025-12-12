@@ -1,7 +1,7 @@
 // src/components/Navbar.tsx
 /* FINAL NAVBAR — ROLE AWARE (STUDENT / INSTRUCTOR, COMPACT, ANIMATED, SAFE) */
 
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import {
   RiNotification3Line,
@@ -36,8 +36,7 @@ const Navbar: React.FC<NavbarProps> = ({ authVersion }) => {
   const [authReady, setAuthReady] = useState(false);
 
   const [displayName, setDisplayName] = useState<string>("Instructor");
-  const [displayEmail, setDisplayEmail] =
-    useState<string>("instructor@college.edu");
+  const [displayEmail, setDisplayEmail] = useState<string>("instructor@college.edu");
   const [avatarPhoto, setAvatarPhoto] = useState<string | null>(null);
 
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
@@ -117,7 +116,6 @@ const Navbar: React.FC<NavbarProps> = ({ authVersion }) => {
         if (u.email) setDisplayEmail(u.email);
         setAvatarPhoto(u.photoURL || null);
       } else {
-        // Firebase user gone → clear avatar, stay logged-out on next authVersion bump
         setAvatarPhoto(null);
       }
     });
@@ -133,10 +131,7 @@ const Navbar: React.FC<NavbarProps> = ({ authVersion }) => {
       if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
         setProfileDropdownOpen(false);
       }
-      if (
-        notificationsRef.current &&
-        !notificationsRef.current.contains(e.target as Node)
-      ) {
+      if (notificationsRef.current && !notificationsRef.current.contains(e.target as Node)) {
         setNotificationsOpen(false);
       }
     }
@@ -186,18 +181,17 @@ const Navbar: React.FC<NavbarProps> = ({ authVersion }) => {
     }
   };
 
-  const avatarLetter =
-    (displayName && displayName.trim().charAt(0).toUpperCase()) || "U";
+  const avatarLetter = (displayName && displayName.trim().charAt(0).toUpperCase()) || "U";
 
-  // Student nav links
+  // Student nav links (CS.ai beside Resources)
   const studentLinks = [
     { to: "/dashboard", label: "Dashboard" },
     { to: "/leaderboard", label: "Leaderboard" },
     { to: "/contests", label: "Contests" },
     { to: "/codepad", label: "CodePad" },
-    // 🔥 FIXED: go to the hub, not a non-existent /career/resume
-    { to: "/career", label: "Career Suite" },
+    { to: "/career", label: "Career Suite" }, // ✅ FIXED (was /career/resume)
     { to: "/resources", label: "Resources" },
+    { to: "/ai-assistance", label: "CS.ai" },
   ];
 
   // Instructor nav links
@@ -217,13 +211,9 @@ const Navbar: React.FC<NavbarProps> = ({ authVersion }) => {
      🔔 NOTIFICATION CLICK HANDLER
   -------------------------------------------------- */
   const handleNotificationClick = (id: string, route?: string) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-    );
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
     setNotificationsOpen(false);
-    if (route) {
-      navigate(route);
-    }
+    if (route) navigate(route);
   };
 
   return (
@@ -252,10 +242,7 @@ const Navbar: React.FC<NavbarProps> = ({ authVersion }) => {
           <ul className="hidden lg:flex items-center gap-5 text-[0.7rem] sm:text-xs font-medium uppercase tracking-[0.16em]">
             {studentLinks.map((link) => (
               <li key={link.to}>
-                <NavLink
-                  to={link.to}
-                  className={({ isActive }) => linkClass(isActive)}
-                >
+                <NavLink to={link.to} className={({ isActive }) => linkClass(isActive)}>
                   {link.label}
                 </NavLink>
               </li>
@@ -267,10 +254,7 @@ const Navbar: React.FC<NavbarProps> = ({ authVersion }) => {
           <ul className="hidden lg:flex items-center gap-5 text-[0.7rem] sm:text-xs font-medium uppercase tracking-[0.16em]">
             {instructorLinks.map((link) => (
               <li key={link.to}>
-                <NavLink
-                  to={link.to}
-                  className={({ isActive }) => linkClass(isActive)}
-                >
+                <NavLink to={link.to} className={({ isActive }) => linkClass(isActive)}>
                   {link.label}
                 </NavLink>
               </li>
@@ -317,6 +301,7 @@ const Navbar: React.FC<NavbarProps> = ({ authVersion }) => {
                   className="relative h-9 w-9 flex items-center justify-center rounded-full border border-slate-800 
                              bg-slate-950 text-slate-100 hover:border-sky-400 hover:bg-slate-900 
                              transition-all duration-200 hover:-translate-y-[1px] shadow-[0_0_0_1px_rgba(15,23,42,0.9)]"
+                  aria-label="Notifications"
                 >
                   <RiNotification3Line className="text-base" />
                   {hasUnread && (
@@ -327,13 +312,9 @@ const Navbar: React.FC<NavbarProps> = ({ authVersion }) => {
                 {notificationsOpen && (
                   <div className="absolute right-0 mt-2 w-80 rounded-2xl border border-slate-800 bg-[#050509]/95 p-3 shadow-2xl shadow-black/60">
                     <div className="flex items-center justify-between mb-2">
-                      <p className="text-xs font-semibold text-slate-100">
-                        Notifications
-                      </p>
+                      <p className="text-xs font-semibold text-slate-100">Notifications</p>
                       <span className="text-[0.65rem] text-slate-500">
-                        {unreadCount > 0
-                          ? `${unreadCount} new`
-                          : "No new alerts"}
+                        {unreadCount > 0 ? `${unreadCount} new` : "No new alerts"}
                       </span>
                     </div>
 
@@ -342,12 +323,9 @@ const Navbar: React.FC<NavbarProps> = ({ authVersion }) => {
                         <div className="mb-2 h-9 w-9 rounded-full bg-slate-900/80 flex items-center justify-center border border-slate-700">
                           <RiNotification3Line className="text-slate-400" />
                         </div>
-                        <p className="text-xs font-medium text-slate-200">
-                          No notifications yet
-                        </p>
+                        <p className="text-xs font-medium text-slate-200">No notifications yet</p>
                         <p className="mt-1 text-[0.65rem] text-slate-500 max-w-[13rem]">
-                          You&apos;ll see contest alerts, leaderboard updates and
-                          profile tips here.
+                          You&apos;ll see contest alerts, leaderboard updates and profile tips here.
                         </p>
                       </div>
                     ) : (
@@ -356,9 +334,7 @@ const Navbar: React.FC<NavbarProps> = ({ authVersion }) => {
                           <li key={n.id}>
                             <button
                               type="button"
-                              onClick={() =>
-                                handleNotificationClick(n.id, n.route)
-                              }
+                              onClick={() => handleNotificationClick(n.id, n.route)}
                               className={`w-full text-left rounded-xl border px-3 py-2 text-xs transition-colors ${
                                 n.read
                                   ? "border-slate-800 bg-slate-950/60 text-slate-300"
@@ -396,6 +372,7 @@ const Navbar: React.FC<NavbarProps> = ({ authVersion }) => {
                   className="relative h-9 w-9 rounded-full p-[1px] bg-gradient-to-br from-sky-500/80 via-fuchsia-500/60 to-emerald-400/80 
                              hover:from-sky-400 hover:via-fuchsia-400 hover:to-emerald-300 transition-all duration-200
                              shadow-[0_0_16px_rgba(56,189,248,0.6)] hover:-translate-y-[1px]"
+                  aria-label="Profile"
                 >
                   <div className="h-full w-full rounded-full bg-slate-950/95 border border-slate-700/70 flex items-center justify-center overflow-hidden">
                     {avatarPhoto ? (
@@ -429,12 +406,8 @@ const Navbar: React.FC<NavbarProps> = ({ authVersion }) => {
                         )}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold text-slate-100 truncate">
-                          {displayName}
-                        </p>
-                        <p className="text-[0.68rem] text-slate-500 truncate">
-                          {displayEmail}
-                        </p>
+                        <p className="text-sm font-semibold text-slate-100 truncate">{displayName}</p>
+                        <p className="text-[0.68rem] text-slate-500 truncate">{displayEmail}</p>
                       </div>
                     </div>
 
@@ -442,15 +415,19 @@ const Navbar: React.FC<NavbarProps> = ({ authVersion }) => {
                       <Link
                         to={role === "student" ? "/profile" : "/instructor/dashboard"}
                         className="flex items-center gap-2 text-slate-200 hover:text-sky-400 transition-colors duration-150"
+                        onClick={() => setProfileDropdownOpen(false)}
                       >
                         <RiUserLine /> Profile
                       </Link>
+
                       <Link
                         to={role === "student" ? "/settings" : "/instructor/dashboard"}
                         className="flex items-center gap-2 text-slate-200 hover:text-sky-400 transition-colors duration-150"
+                        onClick={() => setProfileDropdownOpen(false)}
                       >
                         <RiSettings3Line /> Settings
                       </Link>
+
                       <button
                         onClick={handleLogout}
                         className="flex items-center gap-2 text-rose-400 hover:text-rose-300 transition-colors duration-150"

@@ -7,7 +7,10 @@ import bcrypt from "bcryptjs";
 import authRoutes from "./routes/auth.routes";
 import studentRoutes from "./routes/student.routes";
 import instructorRoutes from "./routes/instructor.routes";
-import careerRoutes from "./routes/career.routes";   // ✅ ADDED
+import careerRoutes from "./routes/career.routes";  
+import aiRoutes from "./routes/ai.routes"; // 👈 CS.ai (Gemini)
+import codepadRoutes from "./routes/codepad.routes"; // 👈 CodePad
+import contestsRouter from "./routes/contests.routes";
 
 // FIREBASE
 import { firestore, FieldValue } from "./config/firebase";
@@ -31,7 +34,15 @@ app.use("/api/instructor", instructorRoutes);
 
 // ✅ NEW CAREER SUITE ROUTES
 app.use("/api/career", careerRoutes);
+// CodePad execution (Piston)
+// POST /api/execute
+app.use("/api", codepadRoutes); // 👈 mounts /execute as /api/execute
 
+// Contests
+app.use("/api", contestsRouter);
+
+// CS.ai (Gemini chat)
+app.use("/api/ai", aiRoutes); // 👈 now /api/ai/chat is live
 // ---------- HEALTH CHECK ----------
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
