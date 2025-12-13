@@ -1,4 +1,7 @@
-// src/server.ts
+// backend/src/server.ts
+import dotenv from "dotenv";
+dotenv.config(); // ✅ load .env FIRST
+
 import express from "express";
 import cors from "cors";
 import bcrypt from "bcryptjs";
@@ -7,9 +10,9 @@ import bcrypt from "bcryptjs";
 import authRoutes from "./routes/auth.routes";
 import studentRoutes from "./routes/student.routes";
 import instructorRoutes from "./routes/instructor.routes";
-import careerRoutes from "./routes/career.routes";  
-import aiRoutes from "./routes/ai.routes"; // 👈 CS.ai (Gemini)
-import codepadRoutes from "./routes/codepad.routes"; // 👈 CodePad
+import careerRoutes from "./routes/career.routes";
+import aiRoutes from "./routes/ai.routes";
+import codepadRoutes from "./routes/codepad.routes";
 import contestsRouter from "./routes/contests.routes";
 
 // FIREBASE
@@ -17,40 +20,59 @@ import { firestore, FieldValue } from "./config/firebase";
 
 const app = express();
 
-// ---------- MIDDLEWARE ----------
+/* --------------------------------------------------
+ * MIDDLEWARE
+ * -------------------------------------------------- */
 app.use(
   cors({
-    origin: "http://localhost:5173", // Vite frontend
+    origin: "http://localhost:5173",
     credentials: true,
   })
 );
 
-app.use(express.json());
+// ATS payloads can get big (resume text + JD)
+app.use(express.json({ limit: "5mb" }));
+app.use(express.urlencoded({ extended: true, limit: "5mb" }));
 
-// ---------- ROUTES ----------
+// Request logger
+app.use((req, _res, next) => {
+  console.log(`[${req.method}] ${req.originalUrl}`);
+  next();
+});
+
+/* --------------------------------------------------
+ * ROUTES
+ * -------------------------------------------------- */
 app.use("/api/auth", authRoutes);
 app.use("/api/student", studentRoutes);
 app.use("/api/instructor", instructorRoutes);
 
-// ✅ NEW CAREER SUITE ROUTES
+// ✅ CAREER SUITE ROUTES
 app.use("/api/career", careerRoutes);
-// CodePad execution (Piston)
-// POST /api/execute
-app.use("/api", codepadRoutes); // 👈 mounts /execute as /api/execute
+
+// CodePad
+app.use("/api", codepadRoutes);
 
 // Contests
 app.use("/api", contestsRouter);
 
-// CS.ai (Gemini chat)
-app.use("/api/ai", aiRoutes); // 👈 now /api/ai/chat is live
-// ---------- HEALTH CHECK ----------
+// CS.ai
+app.use("/api/ai", aiRoutes);
+
+// Health
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok" });
+  res.json({
+    status: "ok",
+    hint: {
+      ats: "POST /api/career/ats-analyzer",
+      pingCareer: "GET /api/career/ping (if enabled in career.routes.ts)",
+    },
+  });
 });
 
-// -----------------------------------------------------
-// 🔐 Ensure default instructor user always exists
-// -----------------------------------------------------
+/* --------------------------------------------------
+ * Ensure default instructor user always exists
+ * -------------------------------------------------- */
 async function ensureDefaultInstructor() {
   const usersCol = firestore.collection("users");
   const instructorsCol = firestore.collection("instructors");
@@ -129,7 +151,9 @@ async function ensureDefaultInstructor() {
   }
 }
 
-// ---------- START SERVER ----------
+/* --------------------------------------------------
+ * START SERVER
+ * -------------------------------------------------- */
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {

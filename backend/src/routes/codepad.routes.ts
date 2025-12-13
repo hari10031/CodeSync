@@ -6,15 +6,25 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 const router = express.Router();
 
 /* ------------------------------------------------
-   GEMINI (Ask CS.ai) SETUP
+   GEMINI (Ask CS.ai) SETUP (.env)
+   backend/.env:
+     GEMINI_API_KEY=your_key_here
+   OR (optional multi-key):
+     GEMINI_KEYS=key1,key2,key3
 --------------------------------------------------- */
-const geminiApiKey = "AIzaSyDgcxjKQ80eAfgYd88wUCbpTvp6d4eUMes";
 
-if (!geminiApiKey) {
-  console.warn("GEMINI_API_KEY is missing. Ask CS.ai will fail.");
+// Prefer GEMINI_KEYS (comma-separated) if present, else GEMINI_API_KEY
+const RAW_KEYS =
+  process.env.GEMINI_KEYS || process.env.GEMINI_API_KEY || process.env.GEMINI_KEY || "";
+
+const GEMINI_KEYS = RAW_KEYS.split(",").map(k => k.trim()).filter(Boolean);
+
+if (!GEMINI_KEYS.length) {
+  console.warn("GEMINI_API_KEY / GEMINI_KEYS is missing. Ask CS.ai will fail.");
 }
 
-const genAI = geminiApiKey ? new GoogleGenerativeAI(geminiApiKey) : null;
+// Create a client per key (lets us rotate keys on quota errors)
+const GEMINI_CLIENTS = GEMINI_KEYS.map((key) => new GoogleGenerativeAI(key));
 
 /* ------------------------------------------------
    MODEL FALLBACK ORDER
@@ -24,43 +34,72 @@ const MODEL_PRIORITY = [
   "gemini-2.0-flash-lite",
   "gemini-2.0-flash-exp",
   "gemini-flash-lite-latest",
-  
 ];
 
+/* ------------------------------------------------
+   Gemini helper: detect retryable errors
+--------------------------------------------------- */
+function isRetryableGeminiError(err: any): boolean {
+  const msg = String(err?.message || err || "").toLowerCase();
+  const status = err?.status || err?.response?.status || err?.code;
+
+  return (
+    status === 429 || // quota / rate limit
+    status === 503 || // service unavailable
+    msg.includes("quota") ||
+    msg.includes("rate") ||
+    msg.includes("resource exhausted") ||
+    msg.includes("too many requests") ||
+    msg.includes("overloaded") ||
+    msg.includes("unavailable") ||
+    msg.includes("timeout")
+  );
+}
+
+/* ------------------------------------------------
+   Gemini generation: key + model fallback
+--------------------------------------------------- */
 async function generateWithFallback(prompt: string): Promise<string> {
-  if (!genAI) throw new Error("Gemini not configured");
+  if (!GEMINI_CLIENTS.length) throw new Error("Gemini not configured");
 
   let lastError: any = null;
 
-  for (const modelName of MODEL_PRIORITY) {
-    try {
-      const model = genAI.getGenerativeModel({ model: modelName });
+  // Try each key, and for each key try model fallbacks
+  for (let ki = 0; ki < GEMINI_CLIENTS.length; ki++) {
+    const client = GEMINI_CLIENTS[ki];
 
-      const result = await model.generateContent({
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: prompt }],
+    for (const modelName of MODEL_PRIORITY) {
+      try {
+        const model = client.getGenerativeModel({ model: modelName });
+
+        const result = await model.generateContent({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.35,
+            responseMimeType: "text/plain",
           },
-        ],
-        generationConfig: {
-          temperature: 0.35,
-          responseMimeType: "text/plain", // clean plain text
-        },
-      });
+        });
 
-      const text = result.response.text().trim();
-      if (text) {
-        console.log(`[Ask CS.ai] Responded using: ${modelName}`);
-        return text;
+        const text = result.response.text().trim();
+        if (text) {
+          console.log(`[Ask CS.ai] Responded using: ${modelName} (key #${ki + 1})`);
+          return text;
+        }
+
+        lastError = new Error(`Empty response from model: ${modelName}`);
+      } catch (err: any) {
+        console.error(`[Ask CS.ai] Model failed (${modelName}) key #${ki + 1}`, err);
+        lastError = err;
+
+        // If NOT retryable, don't waste other keys/models on same bad input
+        if (!isRetryableGeminiError(err)) {
+          throw err;
+        }
       }
-    } catch (err) {
-      console.error(`[Ask CS.ai] Model failed (${modelName})`, err);
-      lastError = err;
     }
   }
 
-  throw lastError ?? new Error("All Gemini models failed in Ask CS.ai");
+  throw lastError ?? new Error("All Gemini models/keys failed in Ask CS.ai");
 }
 
 /* ------------------------------------------------
@@ -103,9 +142,9 @@ router.post("/execute", async (req, res) => {
    /api/ai-helper  (Ask CS.ai)
 --------------------------------------------------- */
 router.post("/ai-helper", async (req, res) => {
-  if (!genAI) {
+  if (!GEMINI_CLIENTS.length) {
     return res.status(500).json({
-      error: "Ask CS.ai not configured (missing API key).",
+      error: "Ask CS.ai not configured (missing GEMINI_API_KEY / GEMINI_KEYS).",
     });
   }
 
@@ -124,9 +163,6 @@ router.post("/ai-helper", async (req, res) => {
       .json({ error: "Missing required fields: language or code." });
   }
 
-  /* ------------------------------------------
-     CLEAN TEXT — NO SYMBOLS LIKE * - # ##
-  -------------------------------------------*/
   const prompt = `
 You are Ask CS.ai, an assistant inside the CodeSync CodePad.
 
@@ -190,7 +226,6 @@ Now produce a neat, cleanly structured plain text explanation following the form
 
   try {
     const text = await generateWithFallback(prompt);
-
     return res.json({ advice: text });
   } catch (err: any) {
     console.error("Ask CS.ai error:", err.message || err);
