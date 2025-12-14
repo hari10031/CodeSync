@@ -1,4 +1,3 @@
-// backend/src/routes/career.routes.ts
 import express, { Request, Response } from "express";
 import rateLimit from "express-rate-limit";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -497,21 +496,36 @@ function computeATSScore(resumeTextRaw: string, jobDescRaw: string): RawEngine {
   const wins: string[] = [];
 
   if (suspiciousTableSignals)
-    issues.push("Table/column formatting signals detected; ATS parsing may break.");
+    issues.push(
+      "Table/column formatting signals detected; ATS parsing may break."
+    );
   else wins.push("No obvious table separators detected (ATS friendly).");
 
-  if (hasCoreHeadings) wins.push("Core headings detected (Skills/Experience/Education).");
-  else issues.push("Core headings missing or weak; add clear Skills, Experience, Education headings.");
+  if (hasCoreHeadings)
+    wins.push("Core headings detected (Skills/Experience/Education).");
+  else
+    issues.push(
+      "Core headings missing or weak; add clear Skills, Experience, Education headings."
+    );
 
-  if (bulletsCount >= 10) wins.push("Good bullet density; easy for recruiters to scan.");
-  else if (bulletsCount >= 5) wins.push("Some bullet points detected; can increase for impact.");
-  else issues.push("Low bullet usage; convert Experience/Projects into bullets.");
+  if (bulletsCount >= 10)
+    wins.push("Good bullet density; easy for recruiters to scan.");
+  else if (bulletsCount >= 5)
+    wins.push("Some bullet points detected; can increase for impact.");
+  else
+    issues.push("Low bullet usage; convert Experience/Projects into bullets.");
 
-  if (metricsCount >= 5) wins.push("Strong quantified impact (numbers/%, scale) detected.");
-  else if (metricsCount >= 2) wins.push("Some metrics detected; add more quantified outcomes.");
-  else issues.push("Low measurable impact; add numbers: %, time saved, users, scale, revenue.");
+  if (metricsCount >= 5)
+    wins.push("Strong quantified impact (numbers/%, scale) detected.");
+  else if (metricsCount >= 2)
+    wins.push("Some metrics detected; add more quantified outcomes.");
+  else
+    issues.push(
+      "Low measurable impact; add numbers: %, time saved, users, scale, revenue."
+    );
 
-  if (actionVerbSignals >= 8) wins.push("Strong action verbs coverage (good framing).");
+  if (actionVerbSignals >= 8)
+    wins.push("Strong action verbs coverage (good framing).");
   else issues.push("Action verbs weak; use built/implemented/optimized/led with outcomes.");
 
   if (!emailDetected) issues.push("Email not detected; ensure contact section is parseable.");
@@ -894,7 +908,8 @@ router.post(
         return res.json({
           engine,
           sections: null,
-          warning: "AI returned non-JSON output unexpectedly. Returning deterministic engine only.",
+          warning:
+            "AI returned non-JSON output unexpectedly. Returning deterministic engine only.",
           gemini: { lastStatus: g.lastStatus, lastError: "Non-JSON output from model" },
         });
       }
@@ -920,13 +935,8 @@ router.post(
 );
 
 /* =========================================================
- * ✅ Job Suggestions (NEW)
- * =========================================================
- *
- * POST /api/career/job-suggestions
- * body: { currentProfile, interests, locationPref }
- * returns: { ok: true, jobs: JobSuggestion[] }
- */
+ * ✅ Job Suggestions
+ * ========================================================= */
 
 router.post(
   "/job-suggestions",
@@ -949,7 +959,7 @@ router.post(
         });
       }
 
-      // Optional tiny personalization from student doc (no new APIs)
+      // Optional tiny personalization from student doc
       let studentContext = "";
       const uid = getUid(req as AuthedUidRequest);
       if (uid) {
@@ -1031,9 +1041,6 @@ ${locationPref || "(not provided)"}
  * ✅ Resume Builder AI Routes
  * ========================================================= */
 
-/**
- * GET /api/career/resume-builder/skill-badges
- */
 router.get(
   "/resume-builder/skill-badges",
   authMiddleware,
@@ -1160,9 +1167,6 @@ router.get(
   }
 );
 
-/**
- * POST /api/career/resume-builder/ai-build
- */
 router.post(
   "/resume-builder/ai-build",
   resumeAiLimiter,
@@ -1205,9 +1209,6 @@ ${JSON.stringify(resume)}
   }
 );
 
-/**
- * POST /api/career/resume-builder/tailor
- */
 router.post(
   "/resume-builder/tailor",
   resumeAiLimiter,
@@ -1255,9 +1256,6 @@ ${JSON.stringify(resume)}
   }
 );
 
-/**
- * POST /api/career/resume-builder/rewrite-bullets
- */
 router.post(
   "/resume-builder/rewrite-bullets",
   resumeAiLimiter,
