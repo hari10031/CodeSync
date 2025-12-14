@@ -20,7 +20,7 @@ import ResourcesPage from "./pages/ResourcesPage";
 import ProfilePage from "./pages/ProfilePage";
 import SettingsPage from "./pages/SettingsPage";
 
-// ✅ NEW: public student view page (clicked from leaderboard)
+// ✅ public student view page (clicked from leaderboard)
 import StudentPublicProfilePage from "./pages/StudentPublicProfilePage";
 
 // CAREER SUITE
@@ -34,6 +34,9 @@ import CSAiPage from "./pages/CSAiPage";
 
 // INSTRUCTOR PAGES
 import InstructorDashboard from "./pages/instructor/InstructorDashboard";
+import InstructorStudents from "./pages/instructor/InstructorStudents";
+import InstructorAnalytics from "./pages/instructor/InstructorAnalytics";
+import InstructorSettings from "./pages/instructor/InstructorSettings";
 
 export default function App() {
   // 🔁 Bump this whenever login/logout happens so Navbar + routes re-read sessionStorage
@@ -138,7 +141,7 @@ export default function App() {
             }
           />
 
-          {/* ✅ NEW: view other student's profile (from leaderboard click) */}
+          {/* ✅ view other student's profile (from leaderboard click) */}
           <Route
             path="/profile/:id"
             element={
@@ -204,12 +207,39 @@ export default function App() {
             }
           />
 
-          {/* ---------- INSTRUCTOR ROUTES ---------- */}
+          {/* ---------- INSTRUCTOR ROUTES (Protected) ---------- */}
           <Route
             path="/instructor/dashboard"
             element={
               <ProtectedRoute allowedRoles={["instructor"]} authVersion={authVersion}>
                 <InstructorDashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/instructor/students"
+            element={
+              <ProtectedRoute allowedRoles={["instructor"]} authVersion={authVersion}>
+                <InstructorStudents />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/instructor/analytics"
+            element={
+              <ProtectedRoute allowedRoles={["instructor"]} authVersion={authVersion}>
+                <InstructorAnalytics />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/instructor/settings"
+            element={
+              <ProtectedRoute allowedRoles={["instructor"]} authVersion={authVersion}>
+                <InstructorSettings />
               </ProtectedRoute>
             }
           />
