@@ -1,5 +1,5 @@
 // src/pages/StudentPublicProfilePage.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import apiClient from "../lib/apiClient";
@@ -27,6 +27,9 @@ import {
   SiGithub,
 } from "react-icons/si";
 
+// ✅ Recharts
+import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+
 /* ---------------- TYPES ---------------- */
 
 type PlatformKey =
@@ -35,8 +38,7 @@ type PlatformKey =
   | "hackerrank"
   | "codeforces"
   | "github"
-  | "atcoder"
-  | "geeksforgeeks";
+  | "atcoder"; // ✅ removed geeksforgeeks
 
 type CpScores = {
   codeSyncScore?: number | null;
@@ -83,6 +85,7 @@ type ApiProfile = {
   profile: any;
 };
 
+/* ---------------- PLATFORM META ---------------- */
 const PLATFORM_META: Record<
   PlatformKey,
   {
@@ -95,50 +98,43 @@ const PLATFORM_META: Record<
 > = {
   leetcode: {
     label: "LeetCode",
-    badge: "L",
-    color: "#f59e0b",
+    badge: "LC",
+    color: "#F97316",
     icon: <SiLeetcode />,
     baseUrl: (h) => `https://leetcode.com/u/${h}/`,
   },
   codechef: {
     label: "CodeChef",
-    badge: "C",
-    color: "#7c5f4a",
+    badge: "CC",
+    color: "#FB7185",
     icon: <SiCodechef />,
     baseUrl: (h) => `https://www.codechef.com/users/${h}`,
   },
   hackerrank: {
     label: "HackerRank",
-    badge: "H",
-    color: "#22c55e",
+    badge: "HR",
+    color: "#22C55E",
     icon: <SiHackerrank />,
     baseUrl: (h) => `https://www.hackerrank.com/profile/${h}`,
   },
   codeforces: {
     label: "CodeForces",
     badge: "CF",
-    color: "#38bdf8",
+    color: "#38BDF8",
     icon: <SiCodeforces />,
     baseUrl: (h) => `https://codeforces.com/profile/${h}`,
   },
   github: {
     label: "GitHub",
-    badge: "G",
-    color: "#94a3b8",
+    badge: "GH",
+    color: "#A78BFA",
     icon: <SiGithub />,
     baseUrl: (h) => `https://github.com/${h}`,
   },
-  geeksforgeeks: {
-    label: "Geeks For Geeks",
-    badge: "G",
-    color: "#16a34a",
-    icon: <RiLinksLine />,
-    baseUrl: (h) => `https://auth.geeksforgeeks.org/user/${h}/`,
-  },
   atcoder: {
     label: "AtCoder",
-    badge: "A",
-    color: "#6366f1",
+    badge: "AC",
+    color: "#60A5FA",
     icon: <RiLinksLine />,
     baseUrl: (h) => `https://atcoder.jp/users/${h}`,
   },
@@ -150,7 +146,6 @@ const PLATFORM_ORDER: PlatformKey[] = [
   "hackerrank",
   "codeforces",
   "github",
-  "geeksforgeeks",
   "atcoder",
 ];
 
@@ -203,16 +198,13 @@ type PortfolioItem = {
 function normalizePortfolioItems(v: any, mode: "project" | "internship" | "cert") {
   if (!v) return [] as PortfolioItem[];
 
-  // already array
   if (Array.isArray(v)) return v as PortfolioItem[];
 
-  // object-map from firestore
   if (typeof v === "object") {
     const vals = Object.values(v);
     return (Array.isArray(vals) ? vals : []) as PortfolioItem[];
   }
 
-  // textarea string to list
   if (typeof v === "string") {
     const s = v.trim();
     if (!s) return [];
@@ -232,171 +224,195 @@ function normalizePortfolioItems(v: any, mode: "project" | "internship" | "cert"
   return [];
 }
 
-/* ---------------- DONUT ---------------- */
+/* ---------------- RECHARTS DONUT ---------------- */
 
+type DonutMetric = "overall" | "solved" | "contests" | "rating";
 type DonutSeg = { key: PlatformKey; label: string; value: number; color: string };
 
-function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
-  const angleRad = ((angleDeg - 90) * Math.PI) / 180;
-  return { x: cx + r * Math.cos(angleRad), y: cy + r * Math.sin(angleRad) };
-}
-
-function arcPath(cx: number, cy: number, r: number, startAngle: number, endAngle: number) {
-  const start = polarToCartesian(cx, cy, r, endAngle);
-  const end = polarToCartesian(cx, cy, r, startAngle);
-  const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
-  return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`;
-}
-
-function DonutChart({
+function RechartsDonut({
+  metric,
   totalLabel,
   totalValue,
   segments,
 }: {
+  metric: DonutMetric;
   totalLabel: string;
   totalValue: number;
   segments: DonutSeg[];
 }) {
-  const size = 360;
-  const cx = size / 2;
-  const cy = size / 2;
-  const r = 118;
-  const stroke = 26;
+  const metricLabel =
+    metric === "solved"
+      ? "Problems Solved"
+      : metric === "contests"
+      ? "Contests"
+      : metric === "rating"
+      ? "Rating"
+      : "Score";
 
-  const [hover, setHover] = useState<{
-    seg: DonutSeg;
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+
+  const clean = useMemo(
+    () => segments.map((s) => ({ ...s, value: safeNum(s.value) })),
+    [segments]
+  );
+
+  const sum = useMemo(() => clean.reduce((a, s) => a + s.value, 0), [clean]);
+  const hasAny = sum > 0;
+
+  const data = useMemo(() => {
+    if (hasAny) return clean;
+    return [
+      {
+        key: "nodata" as any,
+        label: "No Data",
+        value: 1,
+        color: "rgba(148,163,184,0.16)",
+      },
+    ] as any[];
+  }, [clean, hasAny]);
+
+  const [tip, setTip] = useState<{
+    label: string;
+    value: number;
+    color: string;
     x: number;
     y: number;
-    pct: number;
   } | null>(null);
 
-  const cleanSegs = segments.map((s) => ({ ...s, value: safeNum(s.value) }));
-  const total = Math.max(1, cleanSegs.reduce((a, s) => a + s.value, 0));
+  const hideTip = () => setTip(null);
 
-  const tooltip = hover
-    ? {
-        ...hover,
-        x: clamp(hover.x, 12, window.innerWidth - 12),
-        y: clamp(hover.y, 12, window.innerHeight - 12),
-      }
-    : null;
+  const placeTipInside = (clientX: number, clientY: number) => {
+    const rect = wrapRef.current?.getBoundingClientRect();
+    if (!rect) return null;
 
-  let a = 0;
+    let x = clientX - rect.left + 14;
+    let y = clientY - rect.top + 14;
+
+    const maxX = rect.width - 260;
+    const maxY = rect.height - 120;
+    x = clamp(x, 10, Math.max(10, maxX));
+    y = clamp(y, 10, Math.max(10, maxY));
+
+    const cx = rect.width / 2;
+    const cy = rect.height / 2;
+    const dx = clientX - rect.left - cx;
+    const dy = clientY - rect.top - cy;
+    const nearCenter = Math.sqrt(dx * dx + dy * dy) < 120;
+
+    if (nearCenter) {
+      x = clamp(clientX - rect.left + (dx >= 0 ? 20 : -260), 10, Math.max(10, maxX));
+      y = clamp(clientY - rect.top + (dy >= 0 ? 20 : -120), 10, Math.max(10, maxY));
+    }
+
+    return { x, y };
+  };
 
   return (
-    <>
-      <AnimatePresence>
-        {tooltip && (
-          <motion.div
-            key="donut-tip"
-            initial={{ opacity: 0, y: 10, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.98 }}
-            transition={{ duration: 0.12 }}
-            style={{
-              position: "fixed",
-              left: tooltip.x + 14,
-              top: tooltip.y + 14,
-              zIndex: 9999,
-              pointerEvents: "none",
-            }}
-          >
-            <div className="rounded-2xl border border-white/10 bg-[#050712]/95 backdrop-blur-xl px-4 py-3 shadow-[0_30px_120px_rgba(0,0,0,0.7)]">
-              <div className="flex items-center gap-3">
-                <span className="h-3 w-3 rounded-sm" style={{ background: tooltip.seg.color }} />
-                <p className="text-sm font-semibold text-slate-100">{tooltip.seg.label}</p>
+    <div className="rounded-[28px] border border-white/10 bg-[#070816]/55 p-5 shadow-[0_30px_120px_rgba(0,0,0,0.55)] w-full">
+      {/* ✅ hide tooltip on leaving container */}
+      <div ref={wrapRef} className="relative h-[360px]" onMouseLeave={hideTip} onPointerLeave={hideTip}>
+        <AnimatePresence>
+          {tip && (
+            <motion.div
+              key="chart-tip"
+              initial={{ opacity: 0, y: 6, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 5, scale: 0.98 }}
+              transition={{ duration: 0.12 }}
+              className="absolute z-[30]"
+              style={{ left: tip.x, top: tip.y, pointerEvents: "none" }}
+            >
+              <div className="w-[250px] rounded-2xl border border-white/10 bg-[#050712]/92 backdrop-blur-xl px-4 py-3 shadow-[0_24px_90px_rgba(0,0,0,0.72)]">
+                <div className="flex items-center gap-3">
+                  <span className="h-3 w-3 rounded-sm" style={{ background: tip.color }} />
+                  <p className="text-sm font-semibold text-slate-100 truncate">{tip.label}</p>
+                </div>
+
+                <div className="mt-2 flex items-end gap-2">
+                  <p className="text-2xl font-bold text-sky-300 tabular-nums">
+                    {formatValue(Math.round(tip.value))}
+                  </p>
+                  <p className="text-xs text-slate-400">{metricLabel}</p>
+                </div>
+
+                {!hasAny ? (
+                  <p className="mt-1 text-[0.72rem] text-slate-500">No stats yet for this metric</p>
+                ) : null}
               </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-              <div className="mt-2 flex items-end gap-2">
-                <p className="text-2xl font-bold text-sky-300 tabular-nums">
-                  {formatValue(Math.round(tooltip.seg.value))}
-                </p>
-                <p className="text-xs text-slate-400">({tooltip.pct.toFixed(1)}%)</p>
-              </div>
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart onMouseLeave={hideTip}>
+            <Pie
+              data={data}
+              dataKey="value"
+              nameKey="label"
+              innerRadius={92}
+              outerRadius={132}
+              paddingAngle={hasAny ? 2 : 0}
+              stroke="none"
+              isAnimationActive
+              animationDuration={650}
+              onMouseLeave={hideTip}
+              onMouseMove={(state: any, _idx: number, e: any) => {
+                const pos = placeTipInside(e?.clientX, e?.clientY);
+                if (!pos) return;
 
-              <p className="mt-1 text-[0.72rem] text-slate-400">Hovered slice value</p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+                const p = state?.payload;
+                if (!hasAny) {
+                  setTip({
+                    label: "No Data",
+                    value: 0,
+                    color: "rgba(148,163,184,0.16)",
+                    x: pos.x,
+                    y: pos.y,
+                  });
+                  return;
+                }
 
-      <div className="rounded-[28px] border border-white/10 bg-[#070816]/55 p-5 shadow-[0_30px_120px_rgba(0,0,0,0.55)]">
-        <div className="relative flex items-center justify-center">
-          <svg width={size} height={size} className="block">
-            <circle
-              cx={cx}
-              cy={cy}
-              r={r}
-              fill="transparent"
-              stroke="rgba(148,163,184,0.12)"
-              strokeWidth={stroke}
-            />
+                if (!p) return;
+                setTip({
+                  label: p.label,
+                  value: safeNum(p.value),
+                  color: p.color,
+                  x: pos.x,
+                  y: pos.y,
+                });
+              }}
+            >
+              {data.map((entry: any) => (
+                <Cell
+                  key={entry.key}
+                  fill={entry.color}
+                  style={{
+                    cursor: hasAny ? "pointer" : "default",
+                    filter: "drop-shadow(0 0 14px rgba(0,0,0,0.45))",
+                  }}
+                />
+              ))}
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
 
-            {cleanSegs
-              .filter((s) => s.value > 0)
-              .map((s) => {
-                const start = a;
-                const sweep = (s.value / total) * 360;
-                const end = start + sweep;
-                a = end;
-
-                const pct = (s.value / total) * 100;
-
-                return (
-                  <path
-                    key={s.key}
-                    d={arcPath(cx, cy, r, start, end)}
-                    fill="transparent"
-                    stroke={s.color}
-                    strokeWidth={stroke}
-                    strokeLinecap="butt"
-                    style={{
-                      cursor: "pointer",
-                      filter: hover?.seg.key === s.key ? "brightness(1.12)" : "none",
-                      transition: "filter 120ms ease",
-                    }}
-                    onMouseEnter={(e) =>
-                      setHover({ seg: s, x: e.clientX, y: e.clientY, pct })
-                    }
-                    onMouseMove={(e) => {
-                      setHover((prev) =>
-                        prev && prev.seg.key === s.key
-                          ? { ...prev, x: e.clientX, y: e.clientY }
-                          : prev
-                      );
-                    }}
-                    onMouseLeave={() => setHover(null)}
-                  />
-                );
-              })}
-
-            <circle
-              cx={cx}
-              cy={cy}
-              r={r - stroke / 2 - 26}
-              fill="rgba(2,2,10,0.86)"
-              stroke="rgba(148,163,184,0.12)"
-            />
-          </svg>
-
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-            <p className="text-4xl font-bold text-sky-300 tabular-nums">
-              {formatValue(Math.round(totalValue))}
-            </p>
-            <p className="mt-1 text-sm text-slate-400">{totalLabel}</p>
-          </div>
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-slate-200">
-          {cleanSegs.map((s) => (
-            <div key={s.key} className="inline-flex items-center gap-2">
-              <span className="h-3 w-3 rounded-sm" style={{ background: s.color }} />
-              <span className="text-slate-200">{s.label}</span>
-            </div>
-          ))}
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+          <p className="text-4xl font-bold text-sky-300 tabular-nums">
+            {formatValue(Math.round(totalValue))}
+          </p>
+          <p className="mt-1 text-sm text-slate-400">{totalLabel}</p>
         </div>
       </div>
-    </>
+
+      <div className="mt-3 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-slate-200">
+        {segments.map((s) => (
+          <div key={s.key} className="inline-flex items-center gap-2">
+            <span className="h-3 w-3 rounded-sm" style={{ background: s.color }} />
+            <span className="text-slate-200">{s.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -411,7 +427,7 @@ export default function StudentPublicProfilePage() {
   const [err, setErr] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; ok?: boolean } | null>(null);
 
-  const [metric, setMetric] = useState<"overall" | "solved" | "contests" | "rating">("overall");
+  const [metric, setMetric] = useState<DonutMetric>("overall");
   const [portfolioOpen, setPortfolioOpen] = useState(false);
 
   useEffect(() => {
@@ -469,7 +485,6 @@ export default function StudentPublicProfilePage() {
     }
   };
 
-  // ✅ IMPORTANT: hooks below must run on every render (no early return before them)
   const profile = data?.profile || {};
 
   const projects = useMemo(
@@ -487,12 +502,9 @@ export default function StudentPublicProfilePage() {
 
   useEffect(() => {
     if (!data) return;
-    if (projects.length || internships.length || certifications.length) {
-      setPortfolioOpen(true);
-    }
+    if (projects.length || internships.length || certifications.length) setPortfolioOpen(true);
   }, [data, projects.length, internships.length, certifications.length]);
 
-  // ✅ early returns AFTER all hooks
   if (loading) return <LoadingShell onBack={() => navigate(-1)} />;
   if (!data || err) return <ErrorShell message={err || "Unknown error"} onBack={() => navigate(-1)} />;
 
@@ -543,6 +555,7 @@ export default function StudentPublicProfilePage() {
   const linkedPlatforms = PLATFORM_ORDER.filter(
     (p) => ((data.cpHandles?.[p] || "") as string).trim().length > 0
   );
+
   const platformSkills = data?.cpScores?.platformSkills || {};
 
   const segmentsOverall: DonutSeg[] = PLATFORM_ORDER.map((p) => ({
@@ -753,8 +766,13 @@ export default function StudentPublicProfilePage() {
               <MetricTab active={metric === "rating"} onClick={() => setMetric("rating")} label="Rating" />
             </div>
 
-            <div className="mt-5 flex items-center justify-center">
-              <DonutChart totalLabel={metricConfig.totalLabel} totalValue={metricConfig.totalValue} segments={metricConfig.segments} />
+            <div className="mt-5">
+              <RechartsDonut
+                metric={metric}
+                totalLabel={metricConfig.totalLabel}
+                totalValue={metricConfig.totalValue}
+                segments={metricConfig.segments}
+              />
             </div>
           </Card>
         </section>
@@ -788,54 +806,42 @@ export default function StudentPublicProfilePage() {
                   <div className="mt-5 border-t border-white/10" />
                   <div className="mt-5 grid grid-cols-1 lg:grid-cols-3 gap-4">
                     <PortCol title="Internships" icon={<RiBuilding2Line className="text-emerald-300" />}>
-                      {internships.length ? (
-                        internships.slice(0, 6).map((x: any, idx: number) => (
-                          <MiniItem
-                            key={idx}
-                            title={x?.company || x?.title || "Internship"}
-                            sub={x?.role || x?.description || "—"}
-                            meta={x?.duration || x?.time || x?.year || null}
-                          />
-                        ))
-                      ) : (
-                        <EmptyNote text="No internships added." />
-                      )}
+                      {internships.length ? internships.slice(0, 6).map((x: any, idx: number) => (
+                        <MiniItem
+                          key={idx}
+                          title={x?.company || x?.title || "Internship"}
+                          sub={x?.role || x?.description || "—"}
+                          meta={x?.duration || x?.time || x?.year || null}
+                        />
+                      )) : <EmptyNote text="No internships added." />}
                     </PortCol>
 
                     <PortCol title="Projects" icon={<RiSparkling2Line className="text-sky-300" />}>
-                      {projects.length ? (
-                        projects.slice(0, 6).map((p: any, idx: number) => (
-                          <MiniItem
-                            key={idx}
-                            title={p?.title || p?.name || "Project"}
-                            sub={p?.description || p?.summary || "—"}
-                            meta={p?.stack || p?.tech || p?.role || null}
-                            link={p?.link || p?.url || null}
-                            onCopy={(url) => copyText(url, "Link copied")}
-                            onOpen={(url) => window.open(url, "_blank", "noopener,noreferrer")}
-                          />
-                        ))
-                      ) : (
-                        <EmptyNote text="No projects added." />
-                      )}
+                      {projects.length ? projects.slice(0, 6).map((p: any, idx: number) => (
+                        <MiniItem
+                          key={idx}
+                          title={p?.title || p?.name || "Project"}
+                          sub={p?.description || p?.summary || "—"}
+                          meta={p?.stack || p?.tech || p?.role || null}
+                          link={p?.link || p?.url || null}
+                          onCopy={(url) => copyText(url, "Link copied")}
+                          onOpen={(url) => window.open(url, "_blank", "noopener,noreferrer")}
+                        />
+                      )) : <EmptyNote text="No projects added." />}
                     </PortCol>
 
                     <PortCol title="Certifications" icon={<RiBookmarkLine className="text-indigo-300" />}>
-                      {certifications.length ? (
-                        certifications.slice(0, 8).map((c: any, idx: number) => (
-                          <MiniItem
-                            key={idx}
-                            title={c?.name || c?.title || "Certification"}
-                            sub={c?.issuer || c?.provider || c?.description || "—"}
-                            meta={c?.year || c?.date || null}
-                            link={c?.link || c?.url || null}
-                            onCopy={(url) => copyText(url, "Link copied")}
-                            onOpen={(url) => window.open(url, "_blank", "noopener,noreferrer")}
-                          />
-                        ))
-                      ) : (
-                        <EmptyNote text="No certifications added." />
-                      )}
+                      {certifications.length ? certifications.slice(0, 8).map((c: any, idx: number) => (
+                        <MiniItem
+                          key={idx}
+                          title={c?.name || c?.title || "Certification"}
+                          sub={c?.issuer || c?.provider || c?.description || "—"}
+                          meta={c?.year || c?.date || null}
+                          link={c?.link || c?.url || null}
+                          onCopy={(url) => copyText(url, "Link copied")}
+                          onOpen={(url) => window.open(url, "_blank", "noopener,noreferrer")}
+                        />
+                      )) : <EmptyNote text="No certifications added." />}
                     </PortCol>
                   </div>
                 </motion.div>
@@ -892,9 +898,7 @@ function MetricTab({
   return (
     <button
       onClick={onClick}
-      className={`relative px-3 py-2 text-sm transition ${
-        active ? "text-sky-300" : "text-slate-400 hover:text-slate-200"
-      }`}
+      className={`relative px-3 py-2 text-sm transition ${active ? "text-sky-300" : "text-slate-400 hover:text-slate-200"}`}
       type="button"
     >
       <span className="relative z-[1]">{label}</span>
@@ -981,7 +985,7 @@ function ProfileLinkRow({
     <div className="flex items-center justify-between gap-3">
       <div className="flex items-center gap-3 min-w-0">
         <div
-          className="h-10 w-10 rounded-full flex items-center justify-center font-semibold text-sm border border-white/10 shrink-0"
+          className="h-10 w-10 rounded-full flex items-center justify-center font-semibold text-[0.72rem] border border-white/10 shrink-0"
           style={{ background: `${meta.color}22` }}
         >
           <span style={{ color: meta.color }}>{meta.badge}</span>
