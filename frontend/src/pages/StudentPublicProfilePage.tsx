@@ -1,5 +1,5 @@
 // src/pages/StudentPublicProfilePage.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import apiClient from "../lib/apiClient";
@@ -160,16 +160,76 @@ function safeNum(n: any): number {
   const x = Number(n);
   return Number.isFinite(x) ? x : 0;
 }
+
 function formatValue(v: any): string {
   if (v == null || v === "") return "—";
   const n = Number(v);
   if (Number.isFinite(n)) return n.toLocaleString("en-IN");
   return String(v);
 }
+
 function hashToHue(input: string) {
   let h = 0;
   for (let i = 0; i < input.length; i++) h = (h * 31 + input.charCodeAt(i)) >>> 0;
   return h % 360;
+}
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+/* ---------------- NORMALIZE PORTFOLIO ---------------- */
+
+type PortfolioItem = {
+  title?: string;
+  name?: string;
+  company?: string;
+  role?: string;
+  description?: string;
+  summary?: string;
+  stack?: string;
+  tech?: string;
+  duration?: string;
+  time?: string;
+  year?: string;
+  date?: string;
+  issuer?: string;
+  provider?: string;
+  link?: string;
+  url?: string;
+  [k: string]: any;
+};
+
+function normalizePortfolioItems(v: any, mode: "project" | "internship" | "cert") {
+  if (!v) return [] as PortfolioItem[];
+
+  // already array
+  if (Array.isArray(v)) return v as PortfolioItem[];
+
+  // object-map from firestore
+  if (typeof v === "object") {
+    const vals = Object.values(v);
+    return (Array.isArray(vals) ? vals : []) as PortfolioItem[];
+  }
+
+  // textarea string to list
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (!s) return [];
+
+    const lines = s
+      .split(/\r?\n|;|,/)
+      .map((x) => x.trim())
+      .filter(Boolean);
+
+    return lines.map((line) => {
+      if (mode === "internship") return { company: line, role: "—", description: "—" };
+      if (mode === "cert") return { title: line, issuer: "—", description: "—" };
+      return { title: line, description: "—", stack: null };
+    });
+  }
+
+  return [];
 }
 
 /* ---------------- DONUT ---------------- */
@@ -180,15 +240,12 @@ function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
   const angleRad = ((angleDeg - 90) * Math.PI) / 180;
   return { x: cx + r * Math.cos(angleRad), y: cy + r * Math.sin(angleRad) };
 }
+
 function arcPath(cx: number, cy: number, r: number, startAngle: number, endAngle: number) {
   const start = polarToCartesian(cx, cy, r, endAngle);
   const end = polarToCartesian(cx, cy, r, startAngle);
   const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
   return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`;
-}
-
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n));
 }
 
 function DonutChart({
@@ -206,7 +263,6 @@ function DonutChart({
   const r = 118;
   const stroke = 26;
 
-  // ✅ tooltip state
   const [hover, setHover] = useState<{
     seg: DonutSeg;
     x: number;
@@ -217,7 +273,6 @@ function DonutChart({
   const cleanSegs = segments.map((s) => ({ ...s, value: safeNum(s.value) }));
   const total = Math.max(1, cleanSegs.reduce((a, s) => a + s.value, 0));
 
-  // keep tooltip inside viewport
   const tooltip = hover
     ? {
         ...hover,
@@ -230,7 +285,6 @@ function DonutChart({
 
   return (
     <>
-      {/* Tooltip (fixed so it never clips) */}
       <AnimatePresence>
         {tooltip && (
           <motion.div
@@ -249,27 +303,18 @@ function DonutChart({
           >
             <div className="rounded-2xl border border-white/10 bg-[#050712]/95 backdrop-blur-xl px-4 py-3 shadow-[0_30px_120px_rgba(0,0,0,0.7)]">
               <div className="flex items-center gap-3">
-                <span
-                  className="h-3 w-3 rounded-sm"
-                  style={{ background: tooltip.seg.color }}
-                />
-                <p className="text-sm font-semibold text-slate-100">
-                  {tooltip.seg.label}
-                </p>
+                <span className="h-3 w-3 rounded-sm" style={{ background: tooltip.seg.color }} />
+                <p className="text-sm font-semibold text-slate-100">{tooltip.seg.label}</p>
               </div>
 
               <div className="mt-2 flex items-end gap-2">
                 <p className="text-2xl font-bold text-sky-300 tabular-nums">
                   {formatValue(Math.round(tooltip.seg.value))}
                 </p>
-                <p className="text-xs text-slate-400">
-                  ({tooltip.pct.toFixed(1)}%)
-                </p>
+                <p className="text-xs text-slate-400">({tooltip.pct.toFixed(1)}%)</p>
               </div>
 
-              <p className="mt-1 text-[0.72rem] text-slate-400">
-                Hovered slice value
-              </p>
+              <p className="mt-1 text-[0.72rem] text-slate-400">Hovered slice value</p>
             </div>
           </motion.div>
         )}
@@ -310,14 +355,9 @@ function DonutChart({
                       filter: hover?.seg.key === s.key ? "brightness(1.12)" : "none",
                       transition: "filter 120ms ease",
                     }}
-                    onMouseEnter={(e) => {
-                      setHover({
-                        seg: s,
-                        x: e.clientX,
-                        y: e.clientY,
-                        pct,
-                      });
-                    }}
+                    onMouseEnter={(e) =>
+                      setHover({ seg: s, x: e.clientX, y: e.clientY, pct })
+                    }
                     onMouseMove={(e) => {
                       setHover((prev) =>
                         prev && prev.seg.key === s.key
@@ -366,14 +406,13 @@ export default function StudentPublicProfilePage() {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  // ✅ hooks always same order
   const [data, setData] = useState<ApiProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; ok?: boolean } | null>(null);
 
   const [metric, setMetric] = useState<"overall" | "solved" | "contests" | "rating">("overall");
-  const [portfolioOpen, setPortfolioOpen] = useState(false); // initial collapsed ✅
+  const [portfolioOpen, setPortfolioOpen] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -430,13 +469,35 @@ export default function StudentPublicProfilePage() {
     }
   };
 
-  // ✅ early returns AFTER hooks
+  // ✅ IMPORTANT: hooks below must run on every render (no early return before them)
+  const profile = data?.profile || {};
+
+  const projects = useMemo(
+    () => normalizePortfolioItems(profile?.projects, "project"),
+    [data?.id, profile?.projects]
+  );
+  const internships = useMemo(
+    () => normalizePortfolioItems(profile?.internships, "internship"),
+    [data?.id, profile?.internships]
+  );
+  const certifications = useMemo(
+    () => normalizePortfolioItems(profile?.certifications ?? profile?.certificates, "cert"),
+    [data?.id, profile?.certifications, profile?.certificates]
+  );
+
+  useEffect(() => {
+    if (!data) return;
+    if (projects.length || internships.length || certifications.length) {
+      setPortfolioOpen(true);
+    }
+  }, [data, projects.length, internships.length, certifications.length]);
+
+  // ✅ early returns AFTER all hooks
   if (loading) return <LoadingShell onBack={() => navigate(-1)} />;
   if (!data || err) return <ErrorShell message={err || "Unknown error"} onBack={() => navigate(-1)} />;
 
   /* ---------------- DERIVED ---------------- */
 
-  const profile = data.profile || {};
   const fullname = data.fullname || "Student";
   const hue = hashToHue(data.id || fullname);
 
@@ -446,12 +507,17 @@ export default function StudentPublicProfilePage() {
   const aboutText =
     (typeof profile?.about === "string" ? profile.about.trim() : "") || "No bio added yet.";
 
-  const skills: string[] = Array.isArray(profile?.skills) ? profile.skills : [];
-  const interests: string[] = Array.isArray(profile?.interests) ? profile.interests : [];
+  const skills: string[] = Array.isArray(profile?.skills)
+    ? profile.skills
+    : typeof profile?.skills === "string"
+    ? profile.skills.split(/\r?\n|,/).map((x: string) => x.trim()).filter(Boolean)
+    : [];
 
-  const projects: any[] = Array.isArray(profile?.projects) ? profile.projects : [];
-  const internships: any[] = Array.isArray(profile?.internships) ? profile.internships : [];
-  const certifications: any[] = Array.isArray(profile?.certifications) ? profile.certifications : [];
+  const interests: string[] = Array.isArray(profile?.interests)
+    ? profile.interests
+    : typeof profile?.interests === "string"
+    ? profile.interests.split(/\r?\n|,/).map((x: string) => x.trim()).filter(Boolean)
+    : [];
 
   const statFor = (p: PlatformKey) => (data.platformStats || {})[p] || null;
   const solvedByPlatform = (p: PlatformKey) => {
@@ -482,7 +548,7 @@ export default function StudentPublicProfilePage() {
   const segmentsOverall: DonutSeg[] = PLATFORM_ORDER.map((p) => ({
     key: p,
     label: PLATFORM_META[p].label,
-    value: safeNum(platformSkills?.[p] ?? 0),
+    value: safeNum((platformSkills as any)?.[p] ?? 0),
     color: PLATFORM_META[p].color,
   }));
   const segmentsSolved: DonutSeg[] = PLATFORM_ORDER.map((p) => ({
@@ -538,11 +604,7 @@ export default function StudentPublicProfilePage() {
               className={`flex items-center gap-2 rounded-2xl border px-4 py-3 text-xs shadow-[0_30px_90px_rgba(0,0,0,0.75)]
               ${toast.ok ? "border-emerald-500/30 bg-emerald-500/10" : "border-rose-500/30 bg-rose-500/10"}`}
             >
-              {toast.ok ? (
-                <RiCheckLine className="text-emerald-300" />
-              ) : (
-                <RiTimeLine className="text-rose-300" />
-              )}
+              {toast.ok ? <RiCheckLine className="text-emerald-300" /> : <RiTimeLine className="text-rose-300" />}
               <span className="text-slate-200">{toast.msg}</span>
             </div>
           </motion.div>
@@ -570,21 +632,13 @@ export default function StudentPublicProfilePage() {
           <Card>
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0">
-                <p className="text-[0.70rem] uppercase tracking-[0.30em] text-slate-500">
-                  Student
-                </p>
-                <h1 className="mt-2 text-xl sm:text-2xl font-semibold tracking-tight truncate">
-                  {fullname}
-                </h1>
+                <p className="text-[0.70rem] uppercase tracking-[0.30em] text-slate-500">Student</p>
+                <h1 className="mt-2 text-xl sm:text-2xl font-semibold tracking-tight truncate">{fullname}</h1>
               </div>
 
               <div className="text-right shrink-0">
-                <p className="text-[0.70rem] uppercase tracking-[0.30em] text-slate-500">
-                  Overall Score
-                </p>
-                <p className="mt-2 text-2xl sm:text-3xl font-bold text-sky-300 tabular-nums">
-                  {scoreText}
-                </p>
+                <p className="text-[0.70rem] uppercase tracking-[0.30em] text-slate-500">Overall Score</p>
+                <p className="mt-2 text-2xl sm:text-3xl font-bold text-sky-300 tabular-nums">{scoreText}</p>
               </div>
             </div>
           </Card>
@@ -601,18 +655,14 @@ export default function StudentPublicProfilePage() {
             />
 
             <div className="mt-4">
-              <p className="text-[0.65rem] uppercase tracking-[0.24em] text-slate-500">
-                About
-              </p>
+              <p className="text-[0.65rem] uppercase tracking-[0.24em] text-slate-500">About</p>
               <p className="mt-2 text-sm text-slate-300 leading-relaxed">{aboutText}</p>
             </div>
 
             <div className="mt-5 border-t border-white/10" />
 
             <div className="mt-5">
-              <p className="text-[0.65rem] uppercase tracking-[0.24em] text-slate-500">
-                Details
-              </p>
+              <p className="text-[0.65rem] uppercase tracking-[0.24em] text-slate-500">Details</p>
               <div className="mt-3 space-y-2 text-sm">
                 <InfoLine icon={<RiBuilding2Line className="text-slate-500" />} k="Department" v={data.branch || "—"} />
                 <InfoLine icon={<RiHashtag className="text-slate-500" />} k="Section" v={data.section || "—"} />
@@ -625,10 +675,7 @@ export default function StudentPublicProfilePage() {
                   v={displayEmail || "—"}
                   action={
                     displayEmail ? (
-                      <MiniIconBtn
-                        title="Copy email"
-                        onClick={() => copyText(displayEmail, "Email copied")}
-                      >
+                      <MiniIconBtn title="Copy email" onClick={() => copyText(displayEmail, "Email copied")}>
                         <RiFileCopyLine className="text-slate-300" />
                       </MiniIconBtn>
                     ) : null
@@ -641,10 +688,7 @@ export default function StudentPublicProfilePage() {
                   v={data.phone || "—"}
                   action={
                     data.phone ? (
-                      <MiniIconBtn
-                        title="Copy contact"
-                        onClick={() => copyText(String(data.phone), "Contact copied")}
-                      >
+                      <MiniIconBtn title="Copy contact" onClick={() => copyText(String(data.phone), "Contact copied")}>
                         <RiFileCopyLine className="text-slate-300" />
                       </MiniIconBtn>
                     ) : null
@@ -656,9 +700,7 @@ export default function StudentPublicProfilePage() {
             <div className="mt-5 border-t border-white/10" />
 
             <div className="mt-5">
-              <p className="text-[0.65rem] uppercase tracking-[0.24em] text-slate-500">
-                Coding Profiles
-              </p>
+              <p className="text-[0.65rem] uppercase tracking-[0.24em] text-slate-500">Coding Profiles</p>
               <div className="mt-3 space-y-3">
                 {linkedPlatforms.length ? (
                   linkedPlatforms.map((p) => {
@@ -682,28 +724,16 @@ export default function StudentPublicProfilePage() {
             <div className="mt-5 border-t border-white/10" />
 
             <div className="mt-5">
-              <p className="text-[0.65rem] uppercase tracking-[0.24em] text-slate-500">
-                Skills
-              </p>
+              <p className="text-[0.65rem] uppercase tracking-[0.24em] text-slate-500">Skills</p>
               <div className="mt-2 flex flex-wrap gap-2">
-                {skills.length ? (
-                  skills.slice(0, 18).map((s, i) => <Chip key={`${s}-${i}`} text={s} />)
-                ) : (
-                  <EmptyNote text="No skills added." />
-                )}
+                {skills.length ? skills.slice(0, 18).map((s, i) => <Chip key={`${s}-${i}`} text={s} />) : <EmptyNote text="No skills added." />}
               </div>
             </div>
 
             <div className="mt-5">
-              <p className="text-[0.65rem] uppercase tracking-[0.24em] text-slate-500">
-                Interests
-              </p>
+              <p className="text-[0.65rem] uppercase tracking-[0.24em] text-slate-500">Interests</p>
               <div className="mt-2 flex flex-wrap gap-2">
-                {interests.length ? (
-                  interests.slice(0, 18).map((s, i) => <Chip key={`${s}-${i}`} text={s} />)
-                ) : (
-                  <EmptyNote text="No interests added." />
-                )}
+                {interests.length ? interests.slice(0, 18).map((s, i) => <Chip key={`${s}-${i}`} text={s} />) : <EmptyNote text="No interests added." />}
               </div>
             </div>
           </Card>
@@ -724,11 +754,7 @@ export default function StudentPublicProfilePage() {
             </div>
 
             <div className="mt-5 flex items-center justify-center">
-              <DonutChart
-                totalLabel={metricConfig.totalLabel}
-                totalValue={metricConfig.totalValue}
-                segments={metricConfig.segments}
-              />
+              <DonutChart totalLabel={metricConfig.totalLabel} totalValue={metricConfig.totalValue} segments={metricConfig.segments} />
             </div>
           </Card>
         </section>
@@ -743,9 +769,7 @@ export default function StudentPublicProfilePage() {
             >
               <div className="text-left">
                 <p className="text-sm font-semibold text-slate-50">Portfolio</p>
-                <p className="mt-1 text-[0.75rem] text-slate-500">
-                  Internships • Projects • Certifications
-                </p>
+                <p className="mt-1 text-[0.75rem] text-slate-500">Internships • Projects • Certifications</p>
               </div>
               <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-200">
                 {portfolioOpen ? "Hide" : "Show"}
