@@ -32,9 +32,9 @@ function mapLeetCode(stats: LeetCodeStats): PlatformStats {
   const badges: Badge[] =
     badgeCount > 0
       ? Array.from({ length: badgeCount }).map((_, i) => ({
-          name: `LC badge #${i + 1}`,
-          level: "unknown" as BadgeLevel,
-        }))
+        name: `LC badge #${i + 1}`,
+        level: "unknown" as BadgeLevel,
+      }))
       : [];
 
   const totalSolved = (stats.totalSolved ?? 0) as number;
@@ -54,10 +54,29 @@ function mapLeetCode(stats: LeetCodeStats): PlatformStats {
       hard: stats.solvedHard ?? 0,
     },
 
+    // 🔥 Daily problem-solving streak
+    streak: stats.streak ?? 0,
+
+    // 📊 Acceptance rate
+    acceptanceRate: stats.acceptanceRate ?? 0,
+
+    // 🧩 Topic-wise problem counts
+    topicWiseProblemCounts: stats.topicWiseProblemCounts ?? [],
+
     // scoringEngine reads these
     contestRating: stats.contestRating ?? undefined,
     rating: stats.contestRating ?? undefined, // harmless alias
     attendedContests: stats.attendedContests ?? 0,
+    topPercentage: stats.topPercentage ?? undefined,
+
+    // 🏁 Contest history
+    contestHistory: stats.contestHistory ?? [],
+
+    // 📜 Recent submissions
+    recentSubmissions: stats.recentSubmissions ?? [],
+
+    // Languages
+    languages: stats.languages ?? {},
 
     badges,
   };
@@ -81,6 +100,27 @@ function mapCodeforces(stats: CodeforcesStats): PlatformStats {
 
     // extra
     maxRating: stats.maxRating ?? undefined,
+    rank: stats.rank ?? undefined,
+    maxRank: stats.maxRank ?? undefined,
+    contribution: stats.contribution ?? undefined,
+
+    // 📉 Contest history (rating graph / per-contest rating delta)
+    contestHistory: stats.contestHistory ?? [],
+
+    // 🎯 Difficulty-wise problem counts (800–3500)
+    difficultyWiseSolved: stats.difficultyWiseSolved ?? {},
+
+    // 🧠 Tag-wise solved problem counts
+    tagWiseSolved: stats.tagWiseSolved ?? {},
+
+    // 🧾 Submission verdict statistics
+    verdictStats: stats.verdictStats ?? {},
+
+    // 🕒 Recent submissions list
+    recentSubmissions: stats.recentSubmissions ?? [],
+
+    // Languages
+    languages: stats.languages ?? {},
   };
 }
 
@@ -100,12 +140,29 @@ function mapCodeChef(stats: CodeChefStats): PlatformStats {
     fullySolved: fullyTotal,
     partiallySolved: partialTotal,
 
-    // extra
-    maxRating: stats.highestRating ?? undefined,
+    // ⭐ Star rating
     stars: stats.stars ?? undefined,
 
+    // 📊 Solved problems by difficulty
+    fullySolvedByDifficulty: stats.fullySolved ?? {},
+
+    // extra
+    maxRating: stats.highestRating ?? undefined,
+
+    // 🏁 Contest participation history
+    contestHistory: stats.contestHistory ?? [],
+
+    // 📉 Rating graph data
+    ratingGraph: stats.ratingGraph ?? [],
+
+    // 🕒 Recent submissions list
+    recentSubmissions: stats.recentSubmissions ?? [],
+
+    // 💻 Language usage statistics
+    languageStats: stats.languageStats ?? {},
+
     // if you later scrape it, scoringEngine uses contestsEst anyway
-    contestsParticipated: 0,
+    contestsParticipated: stats.contestHistory?.length ?? 0,
   };
 }
 
@@ -117,10 +174,26 @@ function mapAtcoder(stats: AtcoderStats): PlatformStats {
     // scoringEngine reads:
     rating: stats.rating ?? undefined,
     ratedMatches: stats.ratedMatches ?? 0,
-    totalContests: stats.ratedMatches ?? 0, // alias
+    totalContests: stats.totalContests ?? stats.ratedMatches ?? 0,
 
     // extra
     maxRating: stats.highestRating ?? undefined,
+    title: stats.title ?? undefined,
+    rank: stats.rank ?? undefined,
+    lastContest: stats.lastContest ?? undefined,
+
+    // 🏁 Contest history table
+    contests: stats.contests ?? [],
+
+    // 🏆 Best contest performance
+    bestPerformance: stats.bestPerformance ?? undefined,
+    peakRating: stats.peakRating ?? undefined,
+
+    // 📈 Rating graph data
+    ratingGraph: stats.ratingGraph ?? [],
+
+    // 🕒 Recent submissions list
+    recentSubmissions: stats.recentSubmissions ?? [],
   };
 }
 
@@ -156,9 +229,15 @@ function mapHackerRank(stats: HackerRankScrapeResult): PlatformStats {
   return {
     username: stats.username,
     profileUrl: stats.profileUrl,
+
+    // 👤 Full name
     displayName: stats.fullName ?? undefined,
 
+    // 🌍 Country
+    country: stats.country ?? undefined,
+
     // scoringEngine reads:
+    // 📊 Total problems solved
     problemsSolved: stats.problemsSolved ?? 0,
     problemsSolvedTotal: stats.problemsSolved ?? 0,
     contestsParticipated: stats.contestsParticipated ?? 0,
@@ -166,8 +245,14 @@ function mapHackerRank(stats: HackerRankScrapeResult): PlatformStats {
     badges,
     badgesCount: Array.isArray(badges) ? badges.length : 0,
 
-    // extra / UI
+    // 📚 Domain-wise solved problem counts
+    domainWiseSolved: stats.domainWiseSolved ?? [],
     domainScores: stats.domains ?? {},
+
+    // 🏁 Contest participation details
+    contestHistory: stats.contestHistory ?? [],
+
+    // extra / UI
     certificates: (stats as any).certificates ?? [],
     certificatesCount: Array.isArray((stats as any).certificates)
       ? (stats as any).certificates.length
@@ -183,13 +268,33 @@ function mapGitHub(stats: GitHubStats): PlatformStats {
     profileUrl: stats.profileUrl,
 
     // scoringEngine reads:
+    // 📊 Total contributions in the last 1 year
     contributionsLastYear: stats.contributionsLastYear ?? 0,
     publicRepos: stats.publicRepos ?? 0,
     followers: stats.followers ?? 0,
+    following: stats.following ?? 0,
 
-    // scoringEngine supports totalStars OR starsReceived (we set both)
+    // ⭐ Total stars received (sum of all public repositories)
     totalStars,
     starsReceived: totalStars,
+
+    // Top languages
+    topLanguages: stats.topLanguages ?? {},
+
+    // 🔥 Current contribution streak
+    currentStreak: stats.currentStreak ?? 0,
+
+    // 🏆 Longest contribution streak
+    longestStreak: stats.longestStreak ?? 0,
+
+    // 📌 Pinned repositories
+    pinnedRepositories: stats.pinnedRepositories ?? [],
+
+    // 📈 Contribution heatmap (day-wise contribution data)
+    contributionHeatmap: stats.contributionHeatmap ?? [],
+
+    // 🗓️ Monthly contribution totals
+    monthlyContributions: stats.monthlyContributions ?? [],
   };
 }
 

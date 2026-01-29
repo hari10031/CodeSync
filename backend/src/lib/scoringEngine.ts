@@ -62,6 +62,17 @@ export type PlatformStats = {
   fullySolved?: number | { total?: number };
   partiallySolved?: number | { total?: number };
   stars?: number;
+  fullySolvedByDifficulty?: {
+    total?: number;
+    school?: number;
+    easy?: number;
+    medium?: number;
+    hard?: number;
+    challenge?: number;
+    peer?: number;
+  };
+  ratingGraph?: any[];
+  languageStats?: Record<string, number>;
 
   // HackerRank
   badges?: Badge[];
@@ -69,13 +80,48 @@ export type PlatformStats = {
   certificates?: any[];
   certificatesCount?: number;
   domainScores?: Record<string, number>;
+  domainWiseSolved?: any[];
+  country?: string;
 
   // GitHub
   contributionsLastYear?: number;
   publicRepos?: number;
   followers?: number;
+  following?: number;
   totalStars?: number;
   starsReceived?: number;
+  topLanguages?: Record<string, number>;
+  currentStreak?: number;
+  longestStreak?: number;
+  pinnedRepositories?: any[];
+  contributionHeatmap?: any[];
+  monthlyContributions?: any[];
+
+  // LeetCode
+  streak?: number;
+  acceptanceRate?: number;
+  topicWiseProblemCounts?: any[];
+  topPercentage?: number;
+  languages?: Record<string, number>;
+
+  // Codeforces
+  rank?: string | number;
+  maxRank?: string;
+  contribution?: number;
+  difficultyWiseSolved?: Record<string, number>;
+  tagWiseSolved?: Record<string, number>;
+  verdictStats?: Record<string, number>;
+
+  // AtCoder
+  title?: string;
+  lastContest?: string;
+  contests?: any[];
+  bestPerformance?: number;
+  peakRating?: number;
+
+  // Common
+  contestHistory?: any[];
+  recentSubmissions?: any[];
 
   [key: string]: any;
 };

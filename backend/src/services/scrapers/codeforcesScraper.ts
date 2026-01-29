@@ -3,6 +3,27 @@ import axios from "axios";
 
 const CF_API_BASE = "https://codeforces.com/api";
 
+export interface CodeforcesContestHistory {
+  contestId: number;
+  contestName: string;
+  rank: number;
+  oldRating: number;
+  newRating: number;
+  ratingChange: number;
+  date: string;
+}
+
+export interface CodeforcesSubmission {
+  id: number;
+  problemName: string;
+  problemIndex: string;
+  contestId: number | null;
+  verdict: string;
+  language: string;
+  timestamp: number;
+  rating: number | null;
+}
+
 export interface CodeforcesStats {
   username: string;
 
@@ -15,6 +36,21 @@ export interface CodeforcesStats {
 
   contestsAttended: number;
   problemsSolved: number;
+
+  // 📉 Contest history (rating graph / per-contest rating delta)
+  contestHistory: CodeforcesContestHistory[];
+
+  // 🎯 Difficulty-wise problem counts (800–3500)
+  difficultyWiseSolved: Record<string, number>;
+
+  // 🧠 Tag-wise solved problem counts
+  tagWiseSolved: Record<string, number>;
+
+  // 🧾 Submission verdict statistics (AC / WA / TLE / MLE, etc.)
+  verdictStats: Record<string, number>;
+
+  // 🕒 Recent submissions list
+  recentSubmissions: CodeforcesSubmission[];
 
   languages: Record<string, number>;
 
@@ -54,11 +90,32 @@ export async function scrapeCodeforces(username: string): Promise<CodeforcesStat
 
   const contestsAttended = ratingChanges.length;
 
-  // --- Problems solved + language stats from submissions ---
+  // --- Contest history with rating changes ---
+  const contestHistory: CodeforcesContestHistory[] = ratingChanges.map((rc: any) => ({
+    contestId: rc.contestId,
+    contestName: rc.contestName,
+    rank: rc.rank,
+    oldRating: rc.oldRating,
+    newRating: rc.newRating,
+    ratingChange: rc.newRating - rc.oldRating,
+    date: new Date(rc.ratingUpdateTimeSeconds * 1000).toISOString().split('T')[0],
+  }));
+
+  // --- Problems solved + language stats + verdict stats + difficulty stats + tag stats ---
   const solvedProblems = new Set<string>();
   const languages: Record<string, number> = {};
+  const verdictStats: Record<string, number> = {};
+  const difficultyWiseSolved: Record<string, number> = {};
+  const tagWiseSolved: Record<string, number> = {};
+  const solvedProblemDetails: { key: string; rating: number | null; tags: string[] }[] = [];
 
   for (const sub of submissions) {
+    const verdict = sub.verdict || "UNKNOWN";
+    verdictStats[verdict] = (verdictStats[verdict] || 0) + 1;
+
+    const lang = sub.programmingLanguage || "Unknown";
+    languages[lang] = (languages[lang] || 0) + 1;
+
     if (sub.verdict !== "OK") continue;
 
     const problem = sub.problem || {};
@@ -72,13 +129,47 @@ export async function scrapeCodeforces(username: string): Promise<CodeforcesStat
       continue;
     }
 
-    solvedProblems.add(key);
+    if (!solvedProblems.has(key)) {
+      solvedProblems.add(key);
+      solvedProblemDetails.push({
+        key,
+        rating: problem.rating ?? null,
+        tags: problem.tags ?? [],
+      });
+    }
+  }
 
-    const lang = sub.programmingLanguage || "Unknown";
-    languages[lang] = (languages[lang] || 0) + 1;
+  // Calculate difficulty-wise and tag-wise stats from unique solved problems
+  for (const prob of solvedProblemDetails) {
+    // Difficulty
+    if (prob.rating) {
+      const difficultyBucket = String(prob.rating);
+      difficultyWiseSolved[difficultyBucket] = (difficultyWiseSolved[difficultyBucket] || 0) + 1;
+    } else {
+      difficultyWiseSolved["unrated"] = (difficultyWiseSolved["unrated"] || 0) + 1;
+    }
+
+    // Tags
+    for (const tag of prob.tags) {
+      tagWiseSolved[tag] = (tagWiseSolved[tag] || 0) + 1;
+    }
   }
 
   const problemsSolved = solvedProblems.size;
+
+  // --- Recent submissions (last 20) ---
+  const recentSubmissions: CodeforcesSubmission[] = submissions
+    .slice(0, 20)
+    .map((sub: any) => ({
+      id: sub.id,
+      problemName: sub.problem?.name ?? "Unknown",
+      problemIndex: sub.problem?.index ?? "",
+      contestId: sub.problem?.contestId ?? null,
+      verdict: sub.verdict ?? "UNKNOWN",
+      language: sub.programmingLanguage ?? "Unknown",
+      timestamp: sub.creationTimeSeconds ?? 0,
+      rating: sub.problem?.rating ?? null,
+    }));
 
   return {
     username,
@@ -92,6 +183,12 @@ export async function scrapeCodeforces(username: string): Promise<CodeforcesStat
 
     contestsAttended,
     problemsSolved,
+
+    contestHistory,
+    difficultyWiseSolved,
+    tagWiseSolved,
+    verdictStats,
+    recentSubmissions,
 
     languages,
 

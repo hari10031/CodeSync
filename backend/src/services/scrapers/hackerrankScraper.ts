@@ -7,16 +7,45 @@ export type HackerRankBadge = {
   level: number | string | null;
 };
 
+export interface HackerRankContestParticipation {
+  contestName: string;
+  contestSlug: string;
+  rank: number | null;
+  score: number | null;
+  date: string | null;
+}
+
+export interface HackerRankDomainStats {
+  domain: string;
+  solved: number;
+  total: number | null;
+  score: number;
+}
+
 export interface HackerRankScrapeResult {
   username: string;
+
+  // 👤 Full name
   fullName: string | null;
+
+  // 🌍 Country
   country: string | null;
+
+  // 📊 Total problems solved
   problemsSolved: number;
+
   contestsParticipated: number;
   badgesCount: number;
   certificatesCount: number;
   badges: HackerRankBadge[];
-  domains: Record<string, number>; // you said you don't need scores now – you can ignore this
+
+  // 📚 Domain-wise solved problem counts
+  domainWiseSolved: HackerRankDomainStats[];
+  domains: Record<string, number>; // legacy format for backward compatibility
+
+  // 🏁 Contest participation details
+  contestHistory: HackerRankContestParticipation[];
+
   profileUrl: string;
 }
 
@@ -48,7 +77,9 @@ function getEmptyResult(username: string): HackerRankScrapeResult {
     badgesCount: 0,
     certificatesCount: 0,
     badges: [],
+    domainWiseSolved: [],
     domains: {},
+    contestHistory: [],
     profileUrl: `https://www.hackerrank.com/profile/${username}`,
   };
 }
@@ -69,12 +100,13 @@ export async function scrapeHackerRank(
 
   try {
     // Hit all useful endpoints in parallel
-    const [profileRes, badgesRes, certRes, scoresRes] = await Promise.allSettled(
+    const [profileRes, badgesRes, certRes, scoresRes, contestsRes] = await Promise.allSettled(
       [
         hackerRankClient.get(`${base}/profile`),
         hackerRankClient.get(`${base}/badges`),
         hackerRankClient.get(`${base}/certificates`),
         hackerRankClient.get(`${base}/scores`),
+        hackerRankClient.get(`${base}/contest_participation`),
       ]
     );
 
@@ -107,19 +139,47 @@ export async function scrapeHackerRank(
       // If in future you want to expose certs, extend HackerRankScrapeResult
     }
 
-    // DOMAIN SCORES (optional for you – you said you don't need them now)
+    // DOMAIN SCORES - Enhanced with domain-wise solved counts
     if (scoresRes.status === "fulfilled") {
       const rawScores = scoresRes.value.data?.models || [];
       const domains: Record<string, number> = {};
+      const domainWiseSolved: HackerRankDomainStats[] = [];
 
       for (const s of rawScores) {
         const domainName = s.domain || s.name;
         const scoreVal = Number(s.score || 0);
+        const solvedCount = Number(s.solved || s.challenges_solved || 0);
+        const totalCount = s.total_challenges ? Number(s.total_challenges) : null;
+
         if (domainName) {
           domains[domainName] = scoreVal;
+          domainWiseSolved.push({
+            domain: domainName,
+            solved: solvedCount || Math.round(scoreVal / 10), // Estimate if not available
+            total: totalCount,
+            score: scoreVal,
+          });
         }
       }
       result.domains = domains;
+      result.domainWiseSolved = domainWiseSolved;
+    }
+
+    // CONTEST PARTICIPATION
+    if (contestsRes.status === "fulfilled") {
+      const rawContests = contestsRes.value.data?.models || [];
+      result.contestHistory = rawContests.map((c: any) => ({
+        contestName: c.contest_name || c.name || "Unknown Contest",
+        contestSlug: c.contest_slug || c.slug || "",
+        rank: c.rank ? Number(c.rank) : null,
+        score: c.score ? Number(c.score) : null,
+        date: c.ended_at || c.date || null,
+      }));
+
+      // Update contests participated count if we got it from this endpoint
+      if (result.contestHistory.length > result.contestsParticipated) {
+        result.contestsParticipated = result.contestHistory.length;
+      }
     }
 
     return result;

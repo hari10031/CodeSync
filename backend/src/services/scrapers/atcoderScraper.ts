@@ -9,6 +9,23 @@ export interface AtcoderContest {
   performance: number | null;
 }
 
+export interface AtcoderSubmission {
+  id: number;
+  problemId: string;
+  problemName: string;
+  contestId: string;
+  result: string;
+  language: string;
+  timestamp: number;
+  executionTime: number | null;
+}
+
+export interface AtcoderRatingPoint {
+  contestName: string;
+  rating: number;
+  date: string;
+}
+
 export interface AtcoderStats {
   username: string;
 
@@ -19,10 +36,21 @@ export interface AtcoderStats {
   lastContest: string | null;
   title: string | null;
 
+  // 🏁 Contest history table
   contests: AtcoderContest[];
+
+  // 🔢 Total contests participated
   totalContests: number;
+
+  // 🏆 Best contest performance
   bestPerformance: number | null;
   peakRating: number | null;
+
+  // 📈 Rating graph data
+  ratingGraph: AtcoderRatingPoint[];
+
+  // 🕒 Recent submissions list
+  recentSubmissions: AtcoderSubmission[];
 
   profileUrl: string;
 }
@@ -41,6 +69,8 @@ function emptyStats(username: string): AtcoderStats {
     totalContests: 0,
     bestPerformance: null,
     peakRating: null,
+    ratingGraph: [],
+    recentSubmissions: [],
 
     profileUrl: `https://atcoder.jp/users/${username}`,
   };
@@ -106,6 +136,7 @@ export async function scrapeAtcoder(username: string): Promise<AtcoderStats> {
     rows.shift(); // remove header
 
     const contests: AtcoderContest[] = [];
+    const ratingGraph: AtcoderRatingPoint[] = [];
 
     for (const row of rows) {
       const cols = row.split(",");
@@ -125,23 +156,107 @@ export async function scrapeAtcoder(username: string): Promise<AtcoderStats> {
         oldRating,
         newRating,
       });
+
+      // Build rating graph data
+      if (newRating !== null) {
+        ratingGraph.push({
+          contestName,
+          rating: newRating,
+          date,
+        });
+      }
     }
 
     stats.contests = contests;
     stats.totalContests = contests.length;
+    stats.ratingGraph = ratingGraph;
 
     // BEST PERFORMANCE
-    stats.bestPerformance = Math.max(
-      ...contests.map((c) => c.performance || 0)
-    );
+    const performances = contests.map((c) => c.performance || 0).filter(p => p > 0);
+    stats.bestPerformance = performances.length > 0 ? Math.max(...performances) : null;
 
     // PEAK RATING (from history / main)
-    const maxRating = Math.max(
+    const ratings = [
       stats.highestRating || 0,
-      ...contests.map((c) => c.newRating || 0)
-    );
+      ...contests.map((c) => c.newRating || 0),
+    ].filter(r => r > 0);
 
-    stats.peakRating = maxRating;
+    stats.peakRating = ratings.length > 0 ? Math.max(...ratings) : null;
+
+    // ------------------------------------
+    // 3) SCRAPE RECENT SUBMISSIONS
+    // ------------------------------------
+    try {
+      const submissionsUrl = `https://atcoder.jp/users/${username}/submissions`;
+      const subRes = await axios.get(submissionsUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0",
+        },
+      });
+
+      const subHtml = String(subRes.data);
+      const recentSubmissions: AtcoderSubmission[] = [];
+
+      // Parse submission table rows
+      // AtCoder submission table format: Time, Task, User, Language, Score, Code Size, Status, Runtime
+      const tableMatch = subHtml.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i);
+
+      if (tableMatch) {
+        const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+        let rowMatch;
+        let count = 0;
+
+        while ((rowMatch = rowRegex.exec(tableMatch[1])) !== null && count < 20) {
+          const row = rowMatch[1];
+
+          // Extract submission ID from link
+          const idMatch = row.match(/\/submissions\/(\d+)/);
+          const id = idMatch ? parseInt(idMatch[1], 10) : 0;
+
+          // Extract problem info
+          const problemMatch = row.match(/href="\/contests\/([^\/]+)\/tasks\/([^"]+)"[^>]*>([^<]+)</i);
+          const contestId = problemMatch?.[1] || "";
+          const problemId = problemMatch?.[2] || "";
+          const problemName = problemMatch?.[3]?.trim() || "";
+
+          // Extract result/verdict
+          const resultMatch = row.match(/<span[^>]*class="[^"]*label[^"]*"[^>]*>([^<]+)</i) ||
+            row.match(/(AC|WA|TLE|MLE|RE|CE|OLE|IE)/);
+          const result = resultMatch?.[1]?.trim() || "Unknown";
+
+          // Extract language
+          const langMatch = row.match(/<td[^>]*>([^<]*(?:C\+\+|Python|Java|Ruby|Rust|Go|Kotlin|C#|JavaScript|Haskell|OCaml)[^<]*)</i);
+          const language = langMatch?.[1]?.trim() || "Unknown";
+
+          // Extract timestamp - AtCoder format: YYYY-MM-DD HH:MM:SS
+          const timeMatch = row.match(/(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/);
+          const timestamp = timeMatch ? new Date(timeMatch[1]).getTime() / 1000 : 0;
+
+          // Extract execution time in ms
+          const execTimeMatch = row.match(/(\d+)\s*ms/);
+          const executionTime = execTimeMatch ? parseInt(execTimeMatch[1], 10) : null;
+
+          if (id > 0 || problemId) {
+            recentSubmissions.push({
+              id,
+              problemId,
+              problemName,
+              contestId,
+              result,
+              language,
+              timestamp,
+              executionTime,
+            });
+            count++;
+          }
+        }
+      }
+
+      stats.recentSubmissions = recentSubmissions;
+    } catch (subErr: any) {
+      console.error("[ATCODER] Failed to fetch submissions:", subErr.message);
+      // Continue without submissions
+    }
 
     return stats;
   } catch (err: any) {

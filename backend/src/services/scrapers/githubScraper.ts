@@ -4,17 +4,54 @@ import axios from "axios";
 const GITHUB_API_BASE = "https://api.github.com";
 const GITHUB_WEB_BASE = "https://github.com";
 
+export interface PinnedRepository {
+  name: string;
+  description: string | null;
+  url: string;
+  language: string | null;
+  stars: number;
+  forks: number;
+}
+
+export interface ContributionDay {
+  date: string;
+  count: number;
+  weekday: number; // 0 = Sunday, 6 = Saturday
+}
+
+export interface MonthlyContribution {
+  month: string; // "2025-01"
+  total: number;
+}
+
 export interface GitHubStats {
   username: string;
 
+  // ⭐ Total stars received (sum of all public repositories)
   totalStars: number;
   publicRepos: number;
   followers: number;
+  following: number;
 
   topLanguages: Record<string, number>; // language -> repo count
+
+  // 📊 Total contributions in the last 1 year
   contributionsLastYear: number;
+
+  // 🔥 Current contribution streak
   currentStreak: number;
+
+  // 🏆 Longest contribution streak
   longestStreak: number;
+
+  // 📌 Pinned repositories
+  pinnedRepositories: PinnedRepository[];
+
+  // 📈 Contribution heatmap (day-wise contribution data)
+  contributionHeatmap: ContributionDay[];
+
+  // 🗓️ Monthly contribution totals
+  monthlyContributions: MonthlyContribution[];
 
   profileUrl: string;
 }
@@ -63,11 +100,15 @@ async function fetchUserRepos(username: string, perPage = 100) {
  * - contributionsLastYear
  * - currentStreak
  * - longestStreak
+ * - contributionHeatmap (day-wise data)
+ * - monthlyContributions
  */
 async function fetchContributionStreaks(username: string): Promise<{
   contributionsLastYear: number;
   currentStreak: number;
   longestStreak: number;
+  contributionHeatmap: ContributionDay[];
+  monthlyContributions: MonthlyContribution[];
 }> {
   const url = `${GITHUB_WEB_BASE}/users/${encodeURIComponent(username)}/contributions`;
 
@@ -87,12 +128,13 @@ async function fetchContributionStreaks(username: string): Promise<{
     const rectRegex =
       /<rect[^>]*data-date="([^"]+)"[^>]*data-count="([^"]+)"[^>]*>/g;
 
-    const days: { date: string; count: number }[] = [];
+    const days: ContributionDay[] = [];
     let m: RegExpExecArray | null;
     while ((m = rectRegex.exec(html)) !== null) {
       const date = m[1];
       const count = parseInt(m[2], 10) || 0;
-      days.push({ date, count });
+      const dateObj = new Date(date);
+      days.push({ date, count, weekday: dateObj.getDay() });
     }
 
     if (!days.length) {
@@ -100,6 +142,8 @@ async function fetchContributionStreaks(username: string): Promise<{
         contributionsLastYear: 0,
         currentStreak: 0,
         longestStreak: 0,
+        contributionHeatmap: [],
+        monthlyContributions: [],
       };
     }
 
@@ -113,8 +157,15 @@ async function fetchContributionStreaks(username: string): Promise<{
     let prevDate: Date | null = null;
     let runningStreak = 0;
 
+    // Monthly aggregation
+    const monthlyMap: Record<string, number> = {};
+
     for (const day of days) {
       contributionsLastYear += day.count;
+
+      // Monthly aggregation
+      const monthKey = day.date.substring(0, 7); // "2025-01"
+      monthlyMap[monthKey] = (monthlyMap[monthKey] || 0) + day.count;
 
       if (day.count > 0) {
         const currDate = new Date(day.date);
@@ -144,10 +195,17 @@ async function fetchContributionStreaks(username: string): Promise<{
 
     currentStreak = runningStreak;
 
+    // Convert monthly map to array
+    const monthlyContributions: MonthlyContribution[] = Object.entries(monthlyMap)
+      .map(([month, total]) => ({ month, total }))
+      .sort((a, b) => a.month.localeCompare(b.month));
+
     return {
       contributionsLastYear,
       currentStreak,
       longestStreak,
+      contributionHeatmap: days,
+      monthlyContributions,
     };
   } catch (err: any) {
     console.error("[GitHub] Failed to fetch contributions:", err?.message || err);
@@ -155,7 +213,70 @@ async function fetchContributionStreaks(username: string): Promise<{
       contributionsLastYear: 0,
       currentStreak: 0,
       longestStreak: 0,
+      contributionHeatmap: [],
+      monthlyContributions: [],
     };
+  }
+}
+
+/**
+ * Fetch pinned repositories using GitHub GraphQL API
+ */
+async function fetchPinnedRepositories(username: string): Promise<PinnedRepository[]> {
+  const token = process.env.GITHUB_TOKEN;
+
+  if (!token) {
+    // Without a token, we can't use GraphQL API for pinned repos
+    console.warn("[GitHub] GITHUB_TOKEN not set, skipping pinned repositories");
+    return [];
+  }
+
+  const query = `
+    query($username: String!) {
+      user(login: $username) {
+        pinnedItems(first: 6, types: REPOSITORY) {
+          nodes {
+            ... on Repository {
+              name
+              description
+              url
+              primaryLanguage {
+                name
+              }
+              stargazerCount
+              forkCount
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  try {
+    const res = await axios.post(
+      "https://api.github.com/graphql",
+      { query, variables: { username } },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "User-Agent": "CodeSync-SDR/1.0",
+        },
+      }
+    );
+
+    const nodes = res.data?.data?.user?.pinnedItems?.nodes ?? [];
+
+    return nodes.map((repo: any) => ({
+      name: repo.name,
+      description: repo.description,
+      url: repo.url,
+      language: repo.primaryLanguage?.name ?? null,
+      stars: repo.stargazerCount ?? 0,
+      forks: repo.forkCount ?? 0,
+    }));
+  } catch (err: any) {
+    console.error("[GitHub] Failed to fetch pinned repositories:", err?.message || err);
+    return [];
   }
 }
 
@@ -166,10 +287,11 @@ export async function scrapeGitHub(username: string): Promise<GitHubStats> {
 
   username = username.trim();
 
-  const [profile, repos, streaks] = await Promise.all([
+  const [profile, repos, streaks, pinnedRepos] = await Promise.all([
     fetchUserProfile(username),
     fetchUserRepos(username),
     fetchContributionStreaks(username),
+    fetchPinnedRepositories(username),
   ]);
 
   // total stars & languages from repos
@@ -191,11 +313,16 @@ export async function scrapeGitHub(username: string): Promise<GitHubStats> {
     totalStars,
     publicRepos: profile.public_repos ?? 0,
     followers: profile.followers ?? 0,
+    following: profile.following ?? 0,
 
     topLanguages,
     contributionsLastYear: streaks.contributionsLastYear,
     currentStreak: streaks.currentStreak,
     longestStreak: streaks.longestStreak,
+
+    pinnedRepositories: pinnedRepos,
+    contributionHeatmap: streaks.contributionHeatmap,
+    monthlyContributions: streaks.monthlyContributions,
 
     profileUrl: `${GITHUB_WEB_BASE}/${encodeURIComponent(username)}`,
   };
